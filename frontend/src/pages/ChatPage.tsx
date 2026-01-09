@@ -14,7 +14,7 @@ export default function ChatPage() {
   const { chatId } = useParams<{ chatId: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [useRag, setUseRag] = useState(false);
+  const [useRag, setUseRag] = useState(true);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ragApi } from '../lib/api';
 import { Upload, Search, FileText } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
 
 export default function RagPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);\n  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const [uploadName, setUploadName] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -33,25 +35,31 @@ export default function RagPage() {
 
     setUploading(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = (e.target?.result as string).split(',')[1];
-        const format = uploadFile.name.split('.').pop() || 'txt';
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          const base64Content = result.split(',')[1];
+          resolve(base64Content);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadFile);
+      });
 
-        await ragApi.uploadDocument({
-          name: uploadName,
-          content: base64,
-          format,
-        });
+      const format = uploadFile.name.split('.').pop() || 'txt';
 
-        alert('Document uploaded successfully!');
-        setUploadName('');
-        setUploadFile(null);
-      };
-      reader.readAsDataURL(uploadFile);
+      await ragApi.uploadDocument({
+        name: uploadName,
+        content: base64,
+        format,
+      });
+
+      alert('Document uploaded successfully!');
+      setUploadName('');
+      setUploadFile(null);
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed');
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setUploading(false);
     }
@@ -59,18 +67,18 @@ export default function RagPage() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>RAG Documents</h1>
+      <h1 style={styles.title}>Documentos RAG</h1>
 
       <div style={styles.grid}>
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>
             <Search size={24} />
-            Search Documents
+            Pesquisar Documentos
           </h2>
           <form onSubmit={handleSearch} style={styles.form}>
             <input
               type="text"
-              placeholder="What are you looking for?"
+              placeholder="O que você procura?"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={styles.input}
@@ -80,21 +88,21 @@ export default function RagPage() {
               style={styles.button}
               disabled={searching}
             >
-              {searching ? 'Searching...' : 'Search'}
+              {searching ? 'Buscando...' : 'Pesquisar'}
             </button>
           </form>
 
           {searchResults.length > 0 && (
             <div style={styles.results}>
               <h3 style={styles.resultsTitle}>
-                {searchResults.length} results
+                {searchResults.length} resultados
               </h3>
               {searchResults.map((result, idx) => (
                 <div key={idx} style={styles.resultCard}>
                   <div style={styles.resultHeader}>
                     <FileText size={16} />
                     <span style={styles.resultScore}>
-                      Score: {(result.score * 100).toFixed(1)}%
+                      Pontuação: {(result.score * 100).toFixed(1)}%
                     </span>
                   </div>
                   <p style={styles.resultText}>{result.text}</p>
@@ -107,7 +115,7 @@ export default function RagPage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>
             <Upload size={24} />
-            Upload Document
+            Enviar Documento
           </h2>
           <form onSubmit={handleUpload} style={styles.form}>
             <input
@@ -129,7 +137,7 @@ export default function RagPage() {
               style={styles.button}
               disabled={uploading}
             >
-              {uploading ? 'Uploading...' : 'Upload'}
+              {uploading ? 'Enviando...' : 'Enviar'}
             </button>
           </form>
         </div>

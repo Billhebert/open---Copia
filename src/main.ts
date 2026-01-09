@@ -14,6 +14,7 @@ import { ModelRouter } from './infrastructure/models/ModelRouter.js';
 import { PostgresAudit } from './infrastructure/audit/PostgresAudit.js';
 import { MockBudgetPort } from './infrastructure/budget/MockBudgetPort.js';
 import { OpencodeAdapter } from './infrastructure/sdk/OpencodeAdapter.js';
+import { DocumentRepository } from './infrastructure/postgres/repos/DocumentRepository.js';
 
 // Domain
 import { PolicyEngine } from './domain/auth/PolicyEngine.js';
@@ -81,7 +82,7 @@ async function bootstrap() {
 
   // TODO: Criar ports adicionais (DocumentRepo, etc)
   const budgetPort = new MockBudgetPort();
-  const documentRepo: any = null; // Placeholder
+  const documentRepo = new DocumentRepository(prisma);
 
   // Use Cases
   const issueToken = new IssueToken(jwtAuth, auditPort);

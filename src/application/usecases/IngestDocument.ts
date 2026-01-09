@@ -2,6 +2,7 @@ import { AuthContext } from '../../domain/auth/AuthContext.js';
 import { FileStorePort } from '../ports/FileStorePort.js';
 import { RagPort } from '../ports/RagPort.js';
 import { AuditPort } from '../ports/AuditPort.js';
+import { DocumentRepoPort } from '../ports/DocumentRepoPort.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface IngestDocumentInput {
@@ -35,20 +36,19 @@ export class IngestDocument {
     private fileStore: FileStorePort,
     private ragPort: RagPort,
     private auditPort: AuditPort,
-    private documentRepo: any // TODO: criar DocumentRepoPort
+    private documentRepo: DocumentRepoPort
   ) {}
 
   async execute(ctx: AuthContext, input: IngestDocumentInput): Promise<IngestDocumentOutput> {
-    if (!ctx.userId) {
-      throw new Error('User must be authenticated');
-    }
+    // Permite tanto user-level quanto tenant-level authentication
+    const uploadedBy = ctx.userId || 'system';
 
     // 1. Salva o arquivo no FileStore
     const storageKey = `${ctx.tenantId}/documents/${uuidv4()}.${input.format}`;
     await this.fileStore.save(storageKey, input.content, {
       name: input.name,
       format: input.format,
-      uploadedBy: ctx.userId,
+      uploadedBy,
       uploadedAt: new Date().toISOString(),
     });
 
@@ -83,8 +83,8 @@ export class IngestDocument {
       metadata: {},
       chunkingConfig: {
         strategy: 'hybrid',
-        chunkSize: 512,
-        overlap: 50,
+        chunkSize: 4096,
+        overlap: 200,
       },
       status: 'processing',
     });
@@ -96,24 +96,48 @@ export class IngestDocument {
     );
 
     // 5. Gera embeddings e indexa no Qdrant (simplificado)
-    const chunksWithEmbeddings = chunks.map((chunk, index) => ({
-      chunkId: `${version.id}-chunk-${index}`,
-      text: chunk,
-      metadata: {
-        documentId: document.id,
-        documentVersionId: version.id,
-        documentName: document.name,
-        position: index,
-        format: input.format,
-      },
-      accessScope: document.accessScope,
-    }));
+    console.log(`[IngestDocument] Processando ${chunks.length} chunks em batches...`);
+    
+    const BATCH_SIZE = 5;
+    const chunksWithEmbeddings = [];
+    
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE);
+      console.log(`[IngestDocument] Processando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
+      
+      const batchResults = await Promise.all(
+        batch.map(async (chunk, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          const cleanText = chunk.replace(/\0/g, '');
+          const vector = await this.ragPort.generateEmbedding(cleanText);
+          
+          return {
+            chunkId: `${version.id}-chunk-${globalIndex}`,
+            text: cleanText,
+            vector,
+            metadata: {
+              documentId: document.id,
+              documentVersionId: version.id,
+              documentName: document.name,
+              position: globalIndex,
+              format: input.format,
+            },
+            accessScope: document.accessScope,
+          };
+        })
+      );
+      
+      chunksWithEmbeddings.push(...batchResults);
+    }
+
+    console.log(`[IngestDocument] Embeddings gerados, indexando no Qdrant...`);
 
     // Garante que a collection existe
     await this.ragPort.ensureCollection(ctx.tenantId);
 
     // Indexa no Qdrant
     await this.ragPort.indexDocument(ctx.tenantId, version.id, chunksWithEmbeddings);
+    console.log(`[IngestDocument] Documento indexado com sucesso!`);
 
     // Salva chunks no banco
     for (const chunk of chunksWithEmbeddings) {
@@ -133,7 +157,7 @@ export class IngestDocument {
     // Auditoria
     await this.auditPort.log({
       tenantId: ctx.tenantId,
-      userId: ctx.userId,
+      userId: ctx.userId || undefined,
       action: 'document.ingest',
       resource: document.id,
       resourceType: 'document',

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { chatApi } from '../lib/api';
-import { PlusCircle, MessageSquare, Clock } from 'lucide-react';
+import { PlusCircle, MessageSquare, Clock, Trash2 } from 'lucide-react';
 
 interface Chat {
   id: string;
@@ -49,6 +49,22 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!confirm('Are you sure you want to delete this chat?')) {
+      return;
+    }
+
+    try {
+      await chatApi.delete(chatId);
+      setChats((prev) => prev.filter((chat) => chat.id !== chatId));
+    } catch (error) {
+      console.error('Failed to delete chat:', error);
+      alert('Failed to delete chat');
+    }
+  };
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -84,7 +100,16 @@ export default function DashboardPage() {
               onClick={() => navigate(`/chat/${chat.id}`)}
               style={styles.card}
             >
-              <MessageSquare size={24} color="#1d9bf0" />
+              <div style={styles.cardHeader}>
+                <MessageSquare size={24} color="#1d9bf0" />
+                <button
+                  onClick={(e) => handleDeleteChat(chat.id, e)}
+                  style={styles.deleteButton}
+                  title="Delete chat"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
               <h3 style={styles.cardTitle}>{chat.title}</h3>
               <div style={styles.cardFooter}>
                 <Clock size={14} />
@@ -207,6 +232,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+  },
+  cardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    background: 'transparent',
+    color: '#8b98a5',
+    padding: '8px',
+    borderRadius: '6px',
+    transition: 'all 0.2s',
+    cursor: 'pointer',
+    border: 'none',
   },
   cardTitle: {
     fontSize: '18px',

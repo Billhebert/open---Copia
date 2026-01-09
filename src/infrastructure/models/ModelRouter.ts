@@ -12,6 +12,7 @@ export class ModelRouter implements ModelRouterPort {
     // Carrega modelos do arquivo JSON
     const content = await fs.readFile(this.modelsFilePath, 'utf-8');
     const modelsData = JSON.parse(content);
+    console.log(`Loaded models data from ${this.modelsFilePath}`);
 
     this.models = [];
     for (const [providerId, providerData] of Object.entries<any>(modelsData)) {
@@ -106,6 +107,12 @@ export class ModelRouter implements ModelRouterPort {
 
     if (candidates.length === 0) {
       return null;
+    }
+
+    // Procura pelo modelo MiniMax primeiro (padrão)
+    const minimaxModel = candidates.find(m => m.id.includes('minimax'));
+    if (minimaxModel) {
+      return minimaxModel;
     }
 
     // Ordena por preferência
