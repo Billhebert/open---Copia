@@ -70,6 +70,7 @@ export const chatApi = {
   create: (data: { title: string; systemPrompt?: string }) =>
     api.post('/chats', data),
   get: (chatId: string) => api.get(`/chats/${chatId}`),
+  delete: (chatId: string) => api.delete(`/chats/${chatId}`),
   sendMessage: (
     chatId: string,
     data: {

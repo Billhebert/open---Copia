@@ -108,6 +108,12 @@ export class ModelRouter implements ModelRouterPort {
       return null;
     }
 
+    // Procura pelo modelo MiniMax primeiro (padrão)
+    const minimaxModel = candidates.find(m => m.id.includes('minimax'));
+    if (minimaxModel) {
+      return minimaxModel;
+    }
+
     // Ordena por preferência
     candidates.sort((a, b) => {
       // Prefere free se especificado

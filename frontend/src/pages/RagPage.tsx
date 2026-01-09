@@ -33,25 +33,31 @@ export default function RagPage() {
 
     setUploading(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = (e.target?.result as string).split(',')[1];
-        const format = uploadFile.name.split('.').pop() || 'txt';
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          const base64Content = result.split(',')[1];
+          resolve(base64Content);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadFile);
+      });
 
-        await ragApi.uploadDocument({
-          name: uploadName,
-          content: base64,
-          format,
-        });
+      const format = uploadFile.name.split('.').pop() || 'txt';
 
-        alert('Document uploaded successfully!');
-        setUploadName('');
-        setUploadFile(null);
-      };
-      reader.readAsDataURL(uploadFile);
+      await ragApi.uploadDocument({
+        name: uploadName,
+        content: base64,
+        format,
+      });
+
+      alert('Document uploaded successfully!');
+      setUploadName('');
+      setUploadFile(null);
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed');
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setUploading(false);
     }

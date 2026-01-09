@@ -245,6 +245,9 @@ export class QdrantRagAdapter implements RagPort {
     }
 
     try {
+      // MiniMax usa o modelo embo-01 (1024 dimensões)
+      const minimaxModel = this.embeddingProvider === 'minimax' ? 'embo-01' : this.embeddingModel;
+
       const response = await fetch(this.minimaxApiUrl, {
         method: "POST",
         headers: {
@@ -253,7 +256,7 @@ export class QdrantRagAdapter implements RagPort {
           "X-GroupId": this.minimaxGroupId,
         },
         body: JSON.stringify({
-          model: this.embeddingModel,
+          model: minimaxModel,
           input: text,
         }),
       });
