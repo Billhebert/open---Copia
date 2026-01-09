@@ -51,6 +51,19 @@ function slugify(text: string): string {
 }
 
 async function createTenant(config: TenantConfig) {
+  // Verifica se já existe
+  const existing = await prisma.tenant.findUnique({
+    where: { slug: config.slug },
+  });
+
+  if (existing) {
+    console.log(`\n⚠️  Tenant com slug "${config.slug}" já existe!`);
+    console.log(`   ID: ${existing.id}`);
+    console.log(`   Nome: ${existing.name}`);
+    console.log(`   API Key: ${existing.apiKey}\n`);
+    return existing;
+  }
+
   const tenant = await prisma.tenant.create({
     data: {
       name: config.name,
@@ -119,7 +132,18 @@ async function interactiveMode() {
   console.log('📋 PASSO 1: Informações do Tenant\n');
 
   const tenantName = await question('Nome do tenant (ex: "Acme Corporation"): ');
-  const tenantSlug = slugify(await question(`Slug do tenant (sugestão: "${slugify(tenantName)}"): `) || tenantName);
+  let tenantSlug = slugify(await question(`Slug do tenant (sugestão: "${slugify(tenantName)}"): `) || tenantName);
+
+  // Verifica se slug já existe e sugere alternativa
+  let slugExists = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+  while (slugExists) {
+    console.log(`\n⚠️  Slug "${tenantSlug}" já existe!`);
+    const timestamp = Date.now().toString(36).slice(-4);
+    const suggestion = `${tenantSlug}-${timestamp}`;
+    tenantSlug = await question(`Escolha outro slug (sugestão: "${suggestion}"): `) || suggestion;
+    slugExists = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+  }
+
   const tenantDescription = await question('Descrição (opcional): ');
 
   const tenant = await createTenant({
@@ -301,10 +325,14 @@ async function interactiveMode() {
 async function quickMode() {
   console.log('\n🚀 MODO RÁPIDO: Criando configuração padrão...\n');
 
+  // Gera slug único
+  const timestamp = Date.now().toString(36).slice(-4);
+  const slug = `demo-${timestamp}`;
+
   // Tenant padrão
   const tenant = await createTenant({
     name: 'Demo Company',
-    slug: 'demo',
+    slug,
     description: 'Tenant de demonstração',
   });
 
