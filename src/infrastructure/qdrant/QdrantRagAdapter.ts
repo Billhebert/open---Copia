@@ -78,7 +78,10 @@ export class QdrantRagAdapter implements RagPort {
     const collectionName = this.getCollectionName(tenantId);
 
     try {
+      console.log(`[Qdrant] Iniciando busca para tenant ${tenantId}, query: "${query.text}"`);
+
       const queryVector = await this.generateEmbedding(query.text);
+      console.log(`[Qdrant] Embedding gerado com sucesso (dimensões: ${queryVector.length})`);
 
       const filter: any = { must: [] };
 
@@ -87,6 +90,7 @@ export class QdrantRagAdapter implements RagPort {
           key: 'accessScope.department',
           match: { any: query.filters.departments },
         });
+        console.log(`[Qdrant] Filtro de departamentos aplicado: ${query.filters.departments.join(', ')}`);
       }
 
       if (query.filters?.tags && query.filters.tags.length > 0) {
@@ -94,6 +98,7 @@ export class QdrantRagAdapter implements RagPort {
           key: 'accessScope.tags',
           match: { any: query.filters.tags },
         });
+        console.log(`[Qdrant] Filtro de tags aplicado: ${query.filters.tags.join(', ')}`);
       }
 
       if (query.filters?.documentVersionIds && query.filters.documentVersionIds.length > 0) {
@@ -101,17 +106,24 @@ export class QdrantRagAdapter implements RagPort {
           key: 'metadata.documentVersionId',
           match: { any: query.filters.documentVersionIds },
         });
+        console.log(`[Qdrant] Filtro de documentVersionIds aplicado: ${query.filters.documentVersionIds.join(', ')}`);
       }
 
-      const searchResult = await this.client.search(collectionName, {
+      const searchParams = {
         vector: queryVector,
         filter: filter.must.length > 0 ? filter : undefined,
         limit: query.limit || 10,
         score_threshold: query.minScore || 0.5,
         with_payload: true,
-      });
+      };
 
-      return searchResult.map((point: any) => {
+      console.log(`[Qdrant] Parâmetros de busca: limit=${searchParams.limit}, score_threshold=${searchParams.score_threshold}, filters=${filter.must.length > 0 ? 'sim' : 'não'}`);
+
+      const searchResult = await this.client.search(collectionName, searchParams);
+
+      console.log(`[Qdrant] Busca concluída: ${searchResult.length} resultados encontrados`);
+
+      const results = searchResult.map((point: any) => {
         const payload = point.payload || {};
         return {
           documentId: payload.metadata?.documentId || "",
@@ -123,9 +135,21 @@ export class QdrantRagAdapter implements RagPort {
           accessScope: payload.accessScope || {},
         };
       });
-    } catch (error) {
-      console.warn(`[Qdrant] Search failed: ${error}`);
-      return [];
+
+      if (results.length > 0) {
+        console.log(`[Qdrant] Melhor score: ${results[0].score.toFixed(3)}, Pior score: ${results[results.length - 1].score.toFixed(3)}`);
+      }
+
+      return results;
+    } catch (error: any) {
+      console.error(`[Qdrant] Erro na busca:`, error);
+
+      // Verifica se é erro de coleção não existente
+      if (error.message?.includes('Not found') || error.status === 404) {
+        throw new Error(`Coleção RAG não encontrada para o tenant. Por favor, faça upload de um documento primeiro.`);
+      }
+
+      throw new Error(`Erro ao buscar no RAG: ${error.message || error}`);
     }
   }
 
@@ -144,6 +168,8 @@ export class QdrantRagAdapter implements RagPort {
     await this.ensureCollection(tenantId);
 
     try {
+      console.log(`[Qdrant] Indexando ${chunks.length} chunks para documento ${documentVersionId}...`);
+
       const points = await Promise.all(
         chunks.map(async (chunk, index) => {
           const vector = chunk.vector || await this.generateEmbeddingInternal(chunk.text);
@@ -160,9 +186,10 @@ export class QdrantRagAdapter implements RagPort {
       );
 
       await this.client.upsert(collectionName, { points, wait: true });
-      console.log(`[Qdrant] Indexados ${points.length} chunks para documento ${documentVersionId}`);
-    } catch (error) {
-      console.error(`[Qdrant] Index error: ${error}`);
+      console.log(`[Qdrant] ✓ Indexados ${points.length} chunks para documento ${documentVersionId}`);
+    } catch (error: any) {
+      console.error(`[Qdrant] ERRO ao indexar documento:`, error);
+      throw new Error(`Erro ao indexar documento no Qdrant: ${error.message || error}`);
     }
   }
 
@@ -225,6 +252,8 @@ export class QdrantRagAdapter implements RagPort {
 
   private async generateOllamaEmbedding(text: string): Promise<number[]> {
     try {
+      console.log(`[Ollama] Gerando embedding para texto de ${text.length} caracteres...`);
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
@@ -241,18 +270,33 @@ export class QdrantRagAdapter implements RagPort {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Ollama error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Ollama retornou status ${response.status}: ${errorText}`);
       }
 
       const data: any = await response.json();
-      return data.embedding || data.embeddings?.[0] || this.mockEmbedding(text);
+
+      if (!data.embedding && !data.embeddings?.[0]) {
+        throw new Error(`Resposta do Ollama não contém embedding. Resposta: ${JSON.stringify(data)}`);
+      }
+
+      const embedding = data.embedding || data.embeddings[0];
+      console.log(`[Ollama] Embedding gerado com sucesso (${embedding.length} dimensões)`);
+
+      return embedding;
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.warn(`[Ollama] Embedding timeout, using mock`);
-      } else {
-        console.warn(`[Ollama] Embedding failed: ${error.message || error}, using mock`);
+        console.error(`[Ollama] ERRO: Timeout ao gerar embedding (>60s). Verifique se o Ollama está rodando e o modelo está carregado.`);
+        throw new Error(`Timeout ao conectar com Ollama. Verifique se o serviço está rodando em ${this.ollamaUrl}`);
       }
-      return this.mockEmbedding(text);
+
+      if (error.message?.includes('fetch failed') || error.code === 'ECONNREFUSED') {
+        console.error(`[Ollama] ERRO: Não foi possível conectar ao Ollama em ${this.ollamaUrl}`);
+        throw new Error(`Não foi possível conectar ao Ollama. Verifique se o Docker está rodando e o serviço Ollama está ativo.`);
+      }
+
+      console.error(`[Ollama] ERRO ao gerar embedding:`, error);
+      throw new Error(`Erro ao gerar embedding: ${error.message || error}`);
     }
   }
 

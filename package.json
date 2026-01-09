@@ -20,7 +20,8 @@
     "install:all": "npm install && cd frontend && npm install",
     "setup": "tsx scripts/setup.ts",
     "create-tenant": "tsx scripts/create-tenant-users.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "test:rag": "tsx scripts/test-rag.ts"
   },
   "keywords": [
     "opencode",

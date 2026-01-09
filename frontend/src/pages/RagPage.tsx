@@ -7,7 +7,8 @@ export default function RagPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);\n  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const [uploadName, setUploadName] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -18,12 +19,34 @@ export default function RagPage() {
     if (!searchQuery.trim()) return;
 
     setSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+
     try {
+      console.log('[Frontend] Iniciando busca:', searchQuery);
       const response = await ragApi.search(searchQuery);
+      console.log('[Frontend] Resposta recebida:', response.data);
+
+      if (!response.data || !response.data.results) {
+        throw new Error('Resposta inválida do servidor');
+      }
+
       setSearchResults(response.data.results);
-    } catch (error) {
-      console.error('Search failed:', error);
-      alert('Search failed');
+      console.log(`[Frontend] ${response.data.results.length} resultados encontrados`);
+
+      if (response.data.results.length === 0) {
+        setSearchError('Nenhum resultado encontrado. Tente usar termos diferentes ou verifique se há documentos indexados.');
+      }
+    } catch (error: any) {
+      console.error('[Frontend] Erro na busca:', error);
+
+      const errorMessage = error.response?.data?.error
+        || error.response?.data?.message
+        || error.message
+        || 'Erro desconhecido ao buscar';
+
+      setSearchError(errorMessage);
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -91,6 +114,12 @@ export default function RagPage() {
               {searching ? 'Buscando...' : 'Pesquisar'}
             </button>
           </form>
+
+          {searchError && (
+            <div style={styles.errorBox}>
+              <p style={styles.errorText}>⚠️ {searchError}</p>
+            </div>
+          )}
 
           {searchResults.length > 0 && (
             <div style={styles.results}>
@@ -235,5 +264,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     lineHeight: '1.5',
     color: '#e7e9ea',
+  },
+  errorBox: {
+    marginTop: '16px',
+    padding: '16px',
+    background: '#331111',
+    border: '1px solid #ff6b6b',
+    borderRadius: '8px',
+  },
+  errorText: {
+    fontSize: '14px',
+    color: '#ff6b6b',
+    margin: 0,
+    lineHeight: '1.5',
   },
 };
