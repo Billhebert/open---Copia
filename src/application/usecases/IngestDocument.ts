@@ -39,16 +39,15 @@ export class IngestDocument {
   ) {}
 
   async execute(ctx: AuthContext, input: IngestDocumentInput): Promise<IngestDocumentOutput> {
-    if (!ctx.userId) {
-      throw new Error('User must be authenticated');
-    }
+    // Permite tanto user-level quanto tenant-level authentication
+    const uploadedBy = ctx.userId || 'system';
 
     // 1. Salva o arquivo no FileStore
     const storageKey = `${ctx.tenantId}/documents/${uuidv4()}.${input.format}`;
     await this.fileStore.save(storageKey, input.content, {
       name: input.name,
       format: input.format,
-      uploadedBy: ctx.userId,
+      uploadedBy,
       uploadedAt: new Date().toISOString(),
     });
 
@@ -133,7 +132,7 @@ export class IngestDocument {
     // Auditoria
     await this.auditPort.log({
       tenantId: ctx.tenantId,
-      userId: ctx.userId,
+      userId: ctx.userId || undefined,
       action: 'document.ingest',
       resource: document.id,
       resourceType: 'document',
