@@ -19,6 +19,7 @@
     "prisma:studio": "prisma studio",
     "install:all": "npm install && cd frontend && npm install",
     "setup": "tsx scripts/setup.ts",
+    "create-tenant": "tsx scripts/create-tenant-users.ts",
     "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "keywords": [
