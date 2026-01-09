@@ -12,6 +12,7 @@ export class ModelRouter implements ModelRouterPort {
     // Carrega modelos do arquivo JSON
     const content = await fs.readFile(this.modelsFilePath, 'utf-8');
     const modelsData = JSON.parse(content);
+    console.log(`Loaded models data from ${this.modelsFilePath}`);
 
     this.models = [];
     for (const [providerId, providerData] of Object.entries<any>(modelsData)) {

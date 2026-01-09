@@ -135,6 +135,7 @@ export class QdrantRagAdapter implements RagPort {
     chunks: {
       chunkId: string;
       text: string;
+      vector?: number[];
       metadata: Record<string, any>;
       accessScope: Record<string, any>;
     }[]
@@ -144,15 +145,18 @@ export class QdrantRagAdapter implements RagPort {
 
     try {
       const points = await Promise.all(
-        chunks.map(async (chunk, index) => ({
-          id: typeof chunk.chunkId === 'string' ? parseInt(chunk.chunkId, 10) || (index + 1) : chunk.chunkId,
-          vector: await this.generateEmbedding(chunk.text),
-          payload: {
-            text: chunk.text,
-            metadata: { ...chunk.metadata, documentVersionId },
-            accessScope: chunk.accessScope,
-          },
-        }))
+        chunks.map(async (chunk, index) => {
+          const vector = chunk.vector || await this.generateEmbeddingInternal(chunk.text);
+          return {
+            id: typeof chunk.chunkId === 'string' ? parseInt(chunk.chunkId, 10) || (index + 1) : chunk.chunkId,
+            vector,
+            payload: {
+              text: chunk.text,
+              metadata: { ...chunk.metadata, documentVersionId },
+              accessScope: chunk.accessScope,
+            },
+          };
+        })
       );
 
       await this.client.upsert(collectionName, { points, wait: true });
@@ -208,7 +212,11 @@ export class QdrantRagAdapter implements RagPort {
     }
   }
 
-  private async generateEmbedding(text: string): Promise<number[]> {
+  async generateEmbedding(text: string): Promise<number[]> {
+    return this.generateEmbeddingInternal(text);
+  }
+
+  private async generateEmbeddingInternal(text: string): Promise<number[]> {
     if (this.embeddingProvider === 'minimax') {
       return this.generateMiniMaxEmbedding(text);
     }
@@ -217,6 +225,9 @@ export class QdrantRagAdapter implements RagPort {
 
   private async generateOllamaEmbedding(text: string): Promise<number[]> {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
       const response = await fetch(`${this.ollamaUrl}/api/embed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -224,7 +235,10 @@ export class QdrantRagAdapter implements RagPort {
           model: this.embeddingModel,
           input: text,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Ollama error: ${response.status}`);
@@ -232,8 +246,12 @@ export class QdrantRagAdapter implements RagPort {
 
       const data: any = await response.json();
       return data.embedding || data.embeddings?.[0] || this.mockEmbedding(text);
-    } catch (error) {
-      console.warn(`[Ollama] Embedding failed: ${error}, using mock`);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn(`[Ollama] Embedding timeout, using mock`);
+      } else {
+        console.warn(`[Ollama] Embedding failed: ${error.message || error}, using mock`);
+      }
       return this.mockEmbedding(text);
     }
   }

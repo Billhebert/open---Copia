@@ -15,6 +15,7 @@ export interface RagPort {
     chunks: {
       chunkId: string;
       text: string;
+      vector?: number[];
       metadata: Record<string, any>;
       accessScope: Record<string, any>;
     }[]
@@ -44,4 +45,9 @@ export interface RagPort {
    * Deleta a collection de um tenant
    */
   deleteCollection(tenantId: string): Promise<void>;
+
+  /**
+   * Gera embedding para um texto
+   */
+  generateEmbedding(text: string): Promise<number[]>;
 }
