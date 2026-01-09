@@ -17,8 +17,8 @@ interface TenantConfig {
 
 interface DepartmentConfig {
   name: string;
-  description?: string;
   parentId?: string;
+  settings?: any;
 }
 
 interface UserConfig {
@@ -71,18 +71,12 @@ async function createTenant(config: TenantConfig) {
   return tenant;
 }
 
-async function createDepartment(
-  tenantId: string,
-  config: DepartmentConfig,
-  parentId?: string
-) {
+async function createDepartment(config: DepartmentConfig, parentId?: string) {
   const department = await prisma.department.create({
     data: {
-      tenantId,
       name: config.name,
-      description: config.description,
       parentId,
-      settings: {},
+      settings: config.settings || {},
     },
   });
 
@@ -147,9 +141,9 @@ async function interactiveMode() {
       const deptName = await question('\nNome do departamento: ');
       const deptDescription = await question('Descrição (opcional): ');
 
-      const dept = await createDepartment(tenant.id, {
+      const dept = await createDepartment({
         name: deptName,
-        description: deptDescription || undefined,
+        settings: deptDescription ? { description: deptDescription } : {},
       });
 
       departments.set(deptName.toLowerCase(), dept);
@@ -223,8 +217,7 @@ async function interactiveMode() {
 
     let morePolicies = true;
     while (morePolicies) {
-      const policyName = await question('Nome da política: ');
-      const policyDescription = await question('Descrição: ');
+      const policyDescription = await question('Descrição da política: ');
 
       const scopeType = await question('Tipo de escopo (roles/departments/all): ');
 
@@ -243,8 +236,6 @@ async function interactiveMode() {
       await prisma.modelPolicy.create({
         data: {
           tenantId: tenant.id,
-          name: policyName,
-          description: policyDescription,
           scope,
           allowedModels,
           enabled: true,
@@ -252,7 +243,7 @@ async function interactiveMode() {
         },
       });
 
-      console.log(`   ✅ Política criada: ${policyName}`);
+      console.log(`   ✅ Política criada: ${policyDescription}`);
 
       const addMore = await question('\nAdicionar outra política? (s/n): ');
       morePolicies = addMore.toLowerCase() === 's';
@@ -319,14 +310,14 @@ async function quickMode() {
 
   // Departamentos padrão
   console.log('\n🏛️  Criando departamentos...\n');
-  const engineering = await createDepartment(tenant.id, {
+  const engineering = await createDepartment({
     name: 'Engineering',
-    description: 'Engineering team',
+    settings: { description: 'Engineering team' },
   });
 
-  const sales = await createDepartment(tenant.id, {
+  const sales = await createDepartment({
     name: 'Sales',
-    description: 'Sales team',
+    settings: { description: 'Sales team' },
   });
 
   // Usuários padrão
@@ -361,9 +352,7 @@ async function quickMode() {
   await prisma.modelPolicy.create({
     data: {
       tenantId: tenant.id,
-      name: 'Admin Full Access',
-      description: 'Admins can use all models',
-      scope: { roles: ['tenant_admin', 'dept_admin'] },
+      scope: { roles: ['tenant_admin', 'dept_admin'], description: 'Admins can use all models' },
       allowedModels: ['*'],
       enabled: true,
       priority: 100,
@@ -373,9 +362,7 @@ async function quickMode() {
   await prisma.modelPolicy.create({
     data: {
       tenantId: tenant.id,
-      name: 'Free Models Only',
-      description: 'Regular users can only use free models',
-      scope: { roles: ['user'] },
+      scope: { roles: ['user'], description: 'Regular users can only use free models' },
       allowedModels: ['opencode/minimax-m2.1-free', 'opencode/qwen3-coder'],
       enabled: true,
       priority: 50,
