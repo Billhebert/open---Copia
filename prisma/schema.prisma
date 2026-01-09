@@ -1,0 +1,392 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== AUTENTICAÇÃO E AUTORIZAÇÃO ====================
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  apiKey      String   @unique
+  vaultKeyId  String?  // Referência para chave no vault
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  policies        Policy[]
+  chats           Chat[]
+  documents       Document[]
+  documentVersions DocumentVersion[]
+  plugins         TenantPlugin[]
+  modelPolicies   ModelPolicy[]
+  budgets         Budget[]
+  auditLogs       AuditLog[]
+
+  @@index([slug])
+  @@map("tenants")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  tenantId       String
+  email          String
+  name           String
+  passwordHash   String?
+  apiKey         String   @unique
+  vaultKeyId     String?  // Referência para chave no vault (BYO Key)
+  roles          String[]
+  tags           String[]
+  departmentId   String?
+  subdepartment  String?
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department     Department?  @relation(fields: [departmentId], references: [id])
+
+  toolApprovals  ToolCallApproval[]
+  budgets        Budget[]
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([apiKey])
+  @@index([departmentId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model Department {
+  id            String   @id @default(uuid())
+  name          String
+  parentId      String?
+  settings      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  parent        Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children      Department[] @relation("DepartmentHierarchy")
+  users         User[]
+  policies      Policy[]
+
+  @@index([parentId])
+  @@map("departments")
+}
+
+model Policy {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  type          String   // "chat" | "model" | "tool" | "rag" | "plugin"
+  scope         Json     // { roles?, tags?, departments?, subdepartments? }
+  rules         Json     // Regras específicas por tipo
+  priority      Int      @default(0)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([enabled])
+  @@map("policies")
+}
+
+// ==================== CHAT MULTIUSUÁRIO ====================
+
+model Chat {
+  id            String   @id @default(uuid())
+  tenantId      String
+  ownerId       String   // Pode ser user ID ou tenant_<tenantId> para operações de tenant
+  title         String
+  systemPrompt  String?
+  settings      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  members       ChatMember[]
+  messages      Message[]
+  toolCalls     ToolCall[]
+
+  @@index([tenantId])
+  @@index([ownerId])
+  @@map("chats")
+}
+
+model ChatMember {
+  id            String   @id @default(uuid())
+  chatId        String
+  userId        String   // Pode ser user ID ou tenant_<tenantId>
+  role          String   // "owner" | "member" | "viewer"
+  permissions   Json     @default("{}")
+  joinedAt      DateTime @default(now())
+
+  chat          Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+  @@map("chat_members")
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  chatId          String
+  authorId        String   // Pode ser user ID, "system", ou tenant_<tenantId>
+  parentId        String?
+  role            String   // "user" | "assistant" | "system"
+  content         String
+  visibility      String   @default("public") // "public" | "private"
+  visibilityRoles String[] @default([])       // Roles que podem ver (se private)
+  visibilityUsers String[] @default([])       // User IDs que podem ver (se private)
+  accessScope     Json     @default("{}")     // { dept?, subdept?, tags? } para RAG/tools
+  modelUsed       String?
+  reasoning       String?
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  chat            Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  parent          Message? @relation("MessageThread", fields: [parentId], references: [id])
+  children        Message[] @relation("MessageThread")
+
+  @@index([chatId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([visibility])
+  @@map("messages")
+}
+
+// ==================== RAG E DOCUMENTOS ====================
+
+model Document {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  tags          String[]
+  department    String?
+  subdepartment String?
+  accessRoles   String[] // Roles que podem acessar
+  accessScope   Json     @default("{}") // ACL detalhado
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions      DocumentVersion[]
+
+  @@index([tenantId])
+  @@index([department])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id              String   @id @default(uuid())
+  documentId      String
+  tenantId        String
+  version         Int
+  storageKey      String   // Local file path ou S3 key
+  storageType     String   @default("local") // "local" | "s3"
+  format          String   // "pdf" | "docx" | "txt" | "md" | etc
+  size            Int
+  checksum        String
+  metadata        Json     @default("{}")
+  chunkingConfig  Json     @default("{}")
+  embeddingModel  String?
+  status          String   @default("pending") // "pending" | "processing" | "completed" | "failed"
+  createdAt       DateTime @default(now())
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunks          DocumentChunk[]
+
+  @@unique([documentId, version])
+  @@index([documentId])
+  @@index([tenantId])
+  @@index([status])
+  @@map("document_versions")
+}
+
+model DocumentChunk {
+  id                String   @id @default(uuid())
+  documentVersionId String
+  chunkId           String   // ID usado no Qdrant
+  text              String
+  metadata          Json     @default("{}")
+  accessScope       Json     // ACL por chunk
+  position          Int
+  createdAt         DateTime @default(now())
+
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([documentVersionId, chunkId])
+  @@index([documentVersionId])
+  @@map("document_chunks")
+}
+
+// ==================== PLUGINS E TOOLS ====================
+
+model Plugin {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  description   String?
+  type          String   // "mcp-process" | "mcp-http" | "custom"
+  manifest      Json     // Configuração completa do plugin
+  riskLevel     String   @default("low") // "low" | "medium" | "high"
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenantPlugins TenantPlugin[]
+
+  @@map("plugins")
+}
+
+model TenantPlugin {
+  id            String   @id @default(uuid())
+  tenantId      String
+  pluginId      String
+  enabled       Boolean  @default(true)
+  config        Json     @default("{}")
+  scope         Json     @default("{}") // Quem pode usar: dept/subdept/role/user
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plugin        Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, pluginId])
+  @@index([tenantId])
+  @@index([pluginId])
+  @@map("tenant_plugins")
+}
+
+model ToolCall {
+  id              String   @id @default(uuid())
+  chatId          String
+  messageId       String?
+  pluginId        String
+  toolName        String
+  arguments       Json
+  status          String   @default("pending") // "pending" | "pending_approval" | "approved" | "rejected" | "executed" | "failed"
+  result          Json?
+  error           String?
+  requestedBy     String   // User ID
+  approvedBy      String?  // User ID
+  executedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  chat            Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  approvals       ToolCallApproval[]
+
+  @@index([chatId])
+  @@index([status])
+  @@map("tool_calls")
+}
+
+model ToolCallApproval {
+  id            String   @id @default(uuid())
+  toolCallId    String
+  approverId    String
+  decision      String   // "approved" | "rejected"
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  toolCall      ToolCall @relation(fields: [toolCallId], references: [id], onDelete: Cascade)
+  approver      User     @relation(fields: [approverId], references: [id])
+
+  @@index([toolCallId])
+  @@map("tool_call_approvals")
+}
+
+// ==================== MODELOS E ROTEAMENTO ====================
+
+model ModelPolicy {
+  id            String   @id @default(uuid())
+  tenantId      String
+  scope         Json     // { roles?, tags?, departments? }
+  allowedModels String[] // Lista de model IDs permitidos
+  priority      Int      @default(0)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("model_policies")
+}
+
+model Budget {
+  id            String   @id @default(uuid())
+  tenantId      String
+  userId        String?  // null = budget do tenant
+  type          String   // "token" | "cost"
+  limit         Float
+  used          Float    @default(0)
+  period        String   // "daily" | "monthly" | "total"
+  resetAt       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("budgets")
+}
+
+// ==================== AUDITORIA ====================
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  tenantId      String
+  userId        String?
+  action        String   // "auth.login" | "chat.create" | "tool.execute" | etc
+  resource      String?  // ID do recurso afetado
+  resourceType  String?  // "chat" | "message" | "document" | etc
+  details       Json     @default("{}")
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

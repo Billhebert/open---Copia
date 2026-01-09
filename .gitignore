@@ -1,0 +1,78 @@
+# compiled output
+/dist
+/node_modules
+/web/node_modules
+/.pnp
+.pnp.js
+.enc.test
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.enc.test
+.env.test
+# Temp files
+*.swp
+*.swo
+*~
+.tmp/
+temp/
+
+# Build files
+*.tsbuildinfo
+tsconfig.build.tsbuildinfo
+
+# Docker
+.docker/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+neo4j_data/
+redis_data/
+
+# Misc
+.cache
+.parcel-cache

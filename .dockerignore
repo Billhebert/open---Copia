@@ -1,0 +1,63 @@
+# Node modules
+node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Build output
+dist
+build
+.next
+out
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Test
+coverage
+.nyc_output
+*.test.ts
+*.spec.ts
+__tests__
+
+# Misc
+*.md
+!README.md
+.editorconfig
+.prettierrc
+.eslintrc
+tsconfig.json
+
+# Storage (will be volume)
+storage
+
+# Prisma (keep schema, ignore generated)
+prisma/migrations

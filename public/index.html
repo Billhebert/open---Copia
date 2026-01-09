@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode Chat SDK</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>🤖 OpenCode</h1>
+        <button id="newChatBtn" class="btn-new-chat">+ Novo Chat</button>
+      </div>
+      
+      <div class="sessions-list" id="sessionsList">
+        <div class="empty-sessions">Nenhuma sessão ainda</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="model-selector">
+          <label>Modelo:</label>
+          <select id="modelSelect">
+            <option value="">Carregando modelos...</option>
+          </select>
+        </div>
+        <div class="model-info" id="modelInfo">
+          <small>Carregando informações...</small>
+        </div>
+        <div class="model-filters">
+          <button class="filter-btn active" data-filter="all">Todos</button>
+          <button class="filter-btn" data-filter="free">⭐ Grátis</button>
+          <button class="filter-btn" data-filter="multimodal">🖼️ Multimodal</button>
+        </div>
+        <div class="sdk-info">
+          <small>SDK 100% • <span id="modelCount">0 modelos</span></small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="chat-container">
+      <div class="chat-header">
+        <span id="currentSessionTitle">Novo Chat</span>
+        <span id="modelBadge" class="model-badge">Big Pickle</span>
+      </div>
+
+      <div class="chat-messages" id="chatMessages">
+        <div class="welcome-message">
+          <h2>Olá! 👋</h2>
+          <p>Sou o OpenCode Chat, seu assistente de programação.</p>
+          <p>Posso接受了 texto, imagens, áudio e vídeo!</p>
+          <p>Selecione um modelo multimodal e envie arquivos.</p>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <div class="attachments-preview" id="attachmentsPreview"></div>
+        <div class="input-container">
+          <label class="attach-btn" for="fileInput" title="Anexar arquivo">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+            </svg>
+          </label>
+          <input type="file" id="fileInput" accept="image/*,video/*,audio/*,.pdf" multiple hidden>
+          <textarea id="messageInput" placeholder="Digite sua mensagem ou anexe arquivos..." rows="1"></textarea>
+          <button id="sendBtn" class="btn-send">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="input-hint">
+          <span>Enter para enviar, Shift+Enter para nova linha</span>
+          <span id="fileCount">0 arquivos anexados</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
