@@ -35,7 +35,7 @@ export class RagQueryBuilder {
       text,
       accessScope,
       limit: 10,
-      minScore: 0.5, // Reduzido de 0.7 para 0.5 para ser menos restritivo
+      minScore: 0.4, // Reduzido de 0.7 → 0.5 → 0.4 para ser menos restritivo
       filters: {},
     };
   }
@@ -93,7 +93,7 @@ export class RagQueryBuilder {
     return {
       text,
       limit: 10,
-      minScore: 0.5, // Reduzido de 0.7 para 0.5 para ser menos restritivo
+      minScore: 0.4, // Reduzido de 0.7 → 0.5 → 0.4 para ser menos restritivo
       filters,
       accessScope,
     };
@@ -113,7 +113,7 @@ export class RagQueryBuilder {
     return {
       text,
       limit: 10,
-      minScore: 0.5, // Reduzido de 0.7 para 0.5 para ser menos restritivo
+      minScore: 0.4, // Reduzido de 0.7 → 0.5 → 0.4 para ser menos restritivo
       filters,
       accessScope: messageScope,
     };

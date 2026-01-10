@@ -114,24 +114,33 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
 
     try {
       const modelId = params.modelId || "opencode/minimax-m2.1-free";
-      
+
       if (params.systemPrompt) {
         console.log(`[OpenCode] System prompt: ${params.systemPrompt.substring(0, 50)}...`);
       }
 
-      const response = await this.client.session.prompt({
+      console.log(`[OpenCode] Gerando resposta para: "${params.prompt.substring(0, 50)}..."`);
+
+      // Adiciona timeout de 30 segundos usando Promise.race
+      const promptPromise = this.client.session.prompt({
         path: { id: this.sessionId! },
-        body: { 
+        body: {
           parts: [{ type: "text", text: params.prompt }],
-          model: { 
+          model: {
             providerID: "opencode",
-            modelID: "minimax-m2.1-free" 
+            modelID: "minimax-m2.1-free"
           },
         }
       });
 
-      const content = response?.data?.parts?.find((p: any) => p.type === "text")?.text 
-        ?? response?.data?.text 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 30000)
+      );
+
+      const response = await Promise.race([promptPromise, timeoutPromise]);
+
+      const content = response?.data?.parts?.find((p: any) => p.type === "text")?.text
+        ?? response?.data?.text
         ?? JSON.stringify(response?.data ?? response, null, 2);
 
       console.log(`[OpenCode] ✅ Resposta gerada (${content.length} chars)`);

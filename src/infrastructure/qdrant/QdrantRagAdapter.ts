@@ -113,7 +113,7 @@ export class QdrantRagAdapter implements RagPort {
         vector: queryVector,
         filter: filter.must.length > 0 ? filter : undefined,
         limit: query.limit || 10,
-        score_threshold: query.minScore || 0.5,
+        score_threshold: query.minScore || 0.4, // Reduzido de 0.5 para 0.4
         with_payload: true,
       };
 
