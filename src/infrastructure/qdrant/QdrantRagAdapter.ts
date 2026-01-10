@@ -138,6 +138,30 @@ export class QdrantRagAdapter implements RagPort {
 
       if (results.length > 0) {
         console.log(`[Qdrant] Melhor score: ${results[0].score.toFixed(3)}, Pior score: ${results[results.length - 1].score.toFixed(3)}`);
+      } else {
+        // Se não encontrou resultados, tenta buscar sem threshold para diagnóstico
+        console.log(`[Qdrant] ⚠️  Nenhum resultado encontrado com score_threshold=${searchParams.score_threshold}`);
+        console.log(`[Qdrant] 🔍 Tentando busca sem threshold para diagnóstico...`);
+
+        const diagnosticSearch = await this.client.search(collectionName, {
+          vector: queryVector,
+          filter: filter.must.length > 0 ? filter : undefined,
+          limit: 3,
+          with_payload: true,
+          // Sem score_threshold
+        });
+
+        if (diagnosticSearch.length > 0) {
+          const scores = diagnosticSearch.map((p: any) => p.score.toFixed(3)).join(', ');
+          console.log(`[Qdrant] 💡 Existem ${diagnosticSearch.length} documentos, mas os scores são baixos: [${scores}]`);
+          console.log(`[Qdrant] 💡 Sugestão: Reduza o minScore ou melhore a query de busca`);
+        } else if (filter.must.length > 0) {
+          console.log(`[Qdrant] 💡 Nenhum documento encontrado MESMO SEM threshold`);
+          console.log(`[Qdrant] 💡 Problema provável: Filtros ACL muito restritivos`);
+          console.log(`[Qdrant] 💡 Filtros aplicados: ${JSON.stringify(query.filters)}`);
+        } else {
+          console.log(`[Qdrant] 💡 Nenhum documento na coleção! Faça upload de documentos primeiro.`);
+        }
       }
 
       return results;

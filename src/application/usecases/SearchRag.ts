@@ -50,12 +50,17 @@ export class SearchRag {
     if (input.limit) {
       ragQuery.limit = input.limit;
     }
-    if (input.minScore) {
+    if (input.minScore !== undefined) {
       ragQuery.minScore = input.minScore;
     }
 
+    console.log(`[SearchRag] Query: "${input.query}", minScore: ${ragQuery.minScore}, limit: ${ragQuery.limit}`);
+    console.log(`[SearchRag] Contexto: tenant=${ctx.tenantId}, user=${ctx.userId}, dept=${ctx.department || 'none'}, tags=${ctx.tags.join(',') || 'none'}`);
+
     // Busca no Qdrant
     const results = await this.ragPort.search(ctx.tenantId, ragQuery);
+
+    console.log(`[SearchRag] Retornando ${results.length} resultados`);
 
     // Auditoria
     await this.auditPort.log({

@@ -21,7 +21,8 @@
     "setup": "tsx scripts/setup.ts",
     "create-tenant": "tsx scripts/create-tenant-users.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "test:rag": "tsx scripts/test-rag.ts"
+    "test:rag": "tsx scripts/test-rag.ts",
+    "test:rag-search": "tsx scripts/test-rag-search.ts"
   },
   "keywords": [
     "opencode",
