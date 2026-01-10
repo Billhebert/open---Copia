@@ -23,7 +23,8 @@
     "seed:demo": "tsx scripts/seed-demo.ts",
     "test:rag": "tsx scripts/test-rag.ts",
     "test:rag-search": "tsx scripts/test-rag-search.ts",
-    "check:ollama": "tsx scripts/check-ollama-models.ts"
+    "check:ollama": "tsx scripts/check-ollama-models.ts",
+    "check:sdk": "tsx scripts/check-opencode-sdk.ts"
   },
   "keywords": [
     "opencode",
