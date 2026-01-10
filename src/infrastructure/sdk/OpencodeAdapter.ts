@@ -173,28 +173,90 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
           continue;
         }
 
-        // Se for o último modelo, usa fallback
-        console.warn(`[OpenCode] ⚠️  Todos os modelos falharam, usando resposta simulada`);
-        return {
-          content: getMockResponse(params.prompt),
-          reasoning: undefined,
-          modelId: "mock",
-          providerId: "mock",
-          tokens: 10,
-          cost: 0,
-        };
+        // Se for o último modelo, tenta Ollama como último recurso
+        console.warn(`[OpenCode] ⚠️  Todos os modelos falharam, tentando Ollama...`);
+        try {
+          const ollamaResponse = await this.generateResponseWithOllama(params.prompt, params.systemPrompt);
+          return ollamaResponse;
+        } catch (ollamaError) {
+          console.error(`[OpenCode] ❌ Ollama também falhou: ${ollamaError}`);
+          throw new Error('Todos os modelos falharam, incluindo Ollama');
+        }
       }
     }
 
     // Fallback caso o loop não retorne (não deveria acontecer)
-    return {
-      content: getMockResponse(params.prompt),
-      reasoning: undefined,
-      modelId: "mock",
-      providerId: "mock",
-      tokens: 10,
-      cost: 0,
-    };
+    console.warn(`[OpenCode] ⚠️  Tentando Ollama como último recurso...`);
+    try {
+      return await this.generateResponseWithOllama(params.prompt, params.systemPrompt);
+    } catch (error) {
+      console.error(`[OpenCode] ❌ Ollama falhou: ${error}`);
+      throw new Error('Todos os modelos falharam, incluindo Ollama');
+    }
+  }
+
+  private async generateResponseWithOllama(
+    prompt: string,
+    systemPrompt?: string
+  ): Promise<{
+    content: string;
+    reasoning?: string;
+    modelId: string;
+    providerId: string;
+    tokens: number;
+    cost: number;
+  }> {
+    const isWindows = process.platform === "win32";
+    const ollamaUrl = process.env.OLLAMA_URL || (isWindows ? "http://host.docker.internal:11434" : "http://localhost:11434");
+    const ollamaModel = process.env.OLLAMA_MODEL || "llama3.2";
+
+    console.log(`[Ollama] Gerando resposta com modelo ${ollamaModel}...`);
+
+    try {
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt: systemPrompt ? `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:` : prompt,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(60000), // 60 segundos para geração de texto
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama error ${response.status}: ${errorText}`);
+      }
+
+      const data: any = await response.json();
+      const content = data.response || "";
+
+      if (!content) {
+        throw new Error("Ollama retornou resposta vazia");
+      }
+
+      console.log(`[Ollama] ✅ Resposta gerada (${content.length} chars)`);
+
+      return {
+        content,
+        reasoning: undefined,
+        modelId: `ollama/${ollamaModel}`,
+        providerId: "ollama",
+        tokens: content.length,
+        cost: 0,
+      };
+    } catch (error: any) {
+      if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+        throw new Error(`Timeout ao gerar resposta com Ollama (>60s)`);
+      }
+
+      if (error.message?.includes('fetch failed') || error.code === 'ECONNREFUSED') {
+        throw new Error(`Não foi possível conectar ao Ollama em ${ollamaUrl}`);
+      }
+
+      throw error;
+    }
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
