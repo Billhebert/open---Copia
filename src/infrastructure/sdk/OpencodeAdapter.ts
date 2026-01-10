@@ -112,58 +112,89 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
       };
     }
 
-    try {
-      const modelId = params.modelId || "opencode/minimax-m2.1-free";
-
-      if (params.systemPrompt) {
-        console.log(`[OpenCode] System prompt: ${params.systemPrompt.substring(0, 50)}...`);
-      }
-
-      console.log(`[OpenCode] Gerando resposta para: "${params.prompt.substring(0, 50)}..."`);
-
-      // Adiciona timeout de 30 segundos usando Promise.race
-      const promptPromise = this.client.session.prompt({
-        path: { id: this.sessionId! },
-        body: {
-          parts: [{ type: "text", text: params.prompt }],
-          model: {
-            providerID: "opencode",
-            modelID: "minimax-m2.1-free"
-          },
-        }
-      });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), 30000)
-      );
-
-      const response = await Promise.race([promptPromise, timeoutPromise]);
-
-      const content = response?.data?.parts?.find((p: any) => p.type === "text")?.text
-        ?? response?.data?.text
-        ?? JSON.stringify(response?.data ?? response, null, 2);
-
-      console.log(`[OpenCode] ✅ Resposta gerada (${content.length} chars)`);
-
-      return {
-        content,
-        reasoning: response?.data?.reasoning,
-        modelId,
-        providerId: "opencode",
-        tokens: content.length,
-        cost: 0,
-      };
-    } catch (error) {
-      console.warn(`[OpenCode] Erro ao gerar resposta: ${error}`);
-      return {
-        content: getMockResponse(params.prompt),
-        reasoning: undefined,
-        modelId: "mock",
-        providerId: "mock",
-        tokens: 10,
-        cost: 0,
-      };
+    if (params.systemPrompt) {
+      console.log(`[OpenCode] System prompt: ${params.systemPrompt.substring(0, 50)}...`);
     }
+
+    console.log(`[OpenCode] Gerando resposta para: "${params.prompt.substring(0, 50)}..."`);
+
+    // Lista de modelos para tentar em ordem
+    const modelsToTry = [
+      { providerID: "opencode", modelID: "minimax-m2.1-free", displayName: "MiniMax M2.1 Free" },
+      { providerID: "openai", modelID: "gpt-5-nano", displayName: "GPT-5 Nano" },
+    ];
+
+    // Tenta cada modelo em sequência
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const model = modelsToTry[i];
+      const isLastModel = i === modelsToTry.length - 1;
+
+      try {
+        console.log(`[OpenCode] Tentando modelo: ${model.displayName}...`);
+
+        // Adiciona timeout de 30 segundos usando Promise.race
+        const promptPromise = this.client.session.prompt({
+          path: { id: this.sessionId! },
+          body: {
+            parts: [{ type: "text", text: params.prompt }],
+            model: {
+              providerID: model.providerID,
+              modelID: model.modelID
+            },
+          }
+        });
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 30000)
+        );
+
+        const response = await Promise.race([promptPromise, timeoutPromise]);
+
+        const content = response?.data?.parts?.find((p: any) => p.type === "text")?.text
+          ?? response?.data?.text
+          ?? JSON.stringify(response?.data ?? response, null, 2);
+
+        console.log(`[OpenCode] ✅ Resposta gerada com ${model.displayName} (${content.length} chars)`);
+
+        return {
+          content,
+          reasoning: response?.data?.reasoning,
+          modelId: `${model.providerID}/${model.modelID}`,
+          providerId: model.providerID,
+          tokens: content.length,
+          cost: 0,
+        };
+      } catch (error: any) {
+        console.warn(`[OpenCode] ❌ Falha com ${model.displayName}: ${error.message || error}`);
+
+        // Se não for o último modelo, tenta o próximo
+        if (!isLastModel) {
+          console.log(`[OpenCode] 🔄 Tentando próximo modelo...`);
+          continue;
+        }
+
+        // Se for o último modelo, usa fallback
+        console.warn(`[OpenCode] ⚠️  Todos os modelos falharam, usando resposta simulada`);
+        return {
+          content: getMockResponse(params.prompt),
+          reasoning: undefined,
+          modelId: "mock",
+          providerId: "mock",
+          tokens: 10,
+          cost: 0,
+        };
+      }
+    }
+
+    // Fallback caso o loop não retorne (não deveria acontecer)
+    return {
+      content: getMockResponse(params.prompt),
+      reasoning: undefined,
+      modelId: "mock",
+      providerId: "mock",
+      tokens: 10,
+      cost: 0,
+    };
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
