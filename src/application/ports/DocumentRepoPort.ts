@@ -85,5 +85,6 @@ export interface DocumentRepoPort {
   create(input: CreateDocumentInput): Promise<DocumentOutput>;
   createVersion(input: CreateVersionInput): Promise<DocumentVersionOutput>;
   createChunk(input: CreateChunkInput): Promise<DocumentChunkOutput>;
+  createChunks(inputs: CreateChunkInput[]): Promise<DocumentChunkOutput[]>; // Batch insert
   updateVersionStatus(versionId: string, status: string): Promise<void>;
 }

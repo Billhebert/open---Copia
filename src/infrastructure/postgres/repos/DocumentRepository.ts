@@ -64,6 +64,35 @@ export class DocumentRepository implements DocumentRepoPort {
     return this.toChunkOutput(created);
   }
 
+  async createChunks(inputs: CreateChunkInput[]): Promise<DocumentChunkOutput[]> {
+    if (inputs.length === 0) {
+      return [];
+    }
+
+    // Batch insert usando createMany
+    await this.prisma.documentChunk.createMany({
+      data: inputs.map(input => ({
+        documentVersionId: input.documentVersionId,
+        chunkId: input.chunkId,
+        text: input.text,
+        metadata: input.metadata as any,
+        accessScope: input.accessScope as any,
+        position: input.position,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Retorna os chunks criados (createMany não retorna os objetos, então precisamos buscar)
+    const chunks = await this.prisma.documentChunk.findMany({
+      where: {
+        chunkId: { in: inputs.map(i => i.chunkId) },
+      },
+      orderBy: { position: 'asc' },
+    });
+
+    return chunks.map(chunk => this.toChunkOutput(chunk));
+  }
+
   async updateVersionStatus(versionId: string, status: string): Promise<void> {
     await this.prisma.documentVersion.update({
       where: { id: versionId },

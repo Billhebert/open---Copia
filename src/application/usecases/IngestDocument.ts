@@ -95,64 +95,101 @@ export class IngestDocument {
       version.chunkingConfig
     );
 
-    // 5. Gera embeddings e indexa no Qdrant (simplificado)
+    // 5. Gera embeddings e indexa no Qdrant (otimizado)
+    const startTime = Date.now();
     console.log(`[IngestDocument] Processando ${chunks.length} chunks em batches...`);
-    
-    const BATCH_SIZE = 5;
+
+    // Configuração de batches (pode ser ajustado via env vars)
+    const BATCH_SIZE = parseInt(process.env.RAG_BATCH_SIZE || '15', 10); // Aumentado de 5 para 15
+    const PARALLEL_BATCHES = parseInt(process.env.RAG_PARALLEL_BATCHES || '3', 10); // Processa 3 batches em paralelo
+
     const chunksWithEmbeddings = [];
-    
+
+    // Cria array de batches
+    const batches = [];
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE);
-      console.log(`[IngestDocument] Processando batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
-      
-      const batchResults = await Promise.all(
-        batch.map(async (chunk, batchIndex) => {
-          const globalIndex = i + batchIndex;
-          const cleanText = chunk.replace(/\0/g, '');
-          const vector = await this.ragPort.generateEmbedding(cleanText);
-          
-          return {
-            chunkId: `${version.id}-chunk-${globalIndex}`,
-            text: cleanText,
-            vector,
-            metadata: {
-              documentId: document.id,
-              documentVersionId: version.id,
-              documentName: document.name,
-              position: globalIndex,
-              format: input.format,
-            },
-            accessScope: document.accessScope,
-          };
-        })
-      );
-      
-      chunksWithEmbeddings.push(...batchResults);
+      batches.push(chunks.slice(i, i + BATCH_SIZE));
     }
 
-    console.log(`[IngestDocument] Embeddings gerados, indexando no Qdrant...`);
+    console.log(`[IngestDocument] Total de ${batches.length} batches (${BATCH_SIZE} chunks/batch, ${PARALLEL_BATCHES} batches paralelos)`);
+
+    // Processa batches em paralelo (grupos de PARALLEL_BATCHES por vez)
+    for (let batchGroupIndex = 0; batchGroupIndex < batches.length; batchGroupIndex += PARALLEL_BATCHES) {
+      const batchGroup = batches.slice(batchGroupIndex, batchGroupIndex + PARALLEL_BATCHES);
+      const groupStartIndex = batchGroupIndex * BATCH_SIZE;
+
+      console.log(`[IngestDocument] Processando grupo ${Math.floor(batchGroupIndex / PARALLEL_BATCHES) + 1}/${Math.ceil(batches.length / PARALLEL_BATCHES)} (${batchGroup.length} batches em paralelo)...`);
+
+      const groupResults = await Promise.all(
+        batchGroup.map(async (batch, batchIndexInGroup) => {
+          const batchStartIndex = groupStartIndex + (batchIndexInGroup * BATCH_SIZE);
+
+          return await Promise.all(
+            batch.map(async (chunk, chunkIndexInBatch) => {
+              const globalIndex = batchStartIndex + chunkIndexInBatch;
+              const cleanText = chunk.replace(/\0/g, '');
+              const vector = await this.ragPort.generateEmbedding(cleanText);
+
+              return {
+                chunkId: `${version.id}-chunk-${globalIndex}`,
+                text: cleanText,
+                vector,
+                metadata: {
+                  documentId: document.id,
+                  documentVersionId: version.id,
+                  documentName: document.name,
+                  position: globalIndex,
+                  format: input.format,
+                },
+                accessScope: document.accessScope,
+              };
+            })
+          );
+        })
+      );
+
+      // Flatten results
+      for (const batchResult of groupResults) {
+        chunksWithEmbeddings.push(...batchResult);
+      }
+
+      const progress = ((batchGroupIndex + batchGroup.length) / batches.length * 100).toFixed(1);
+      console.log(`[IngestDocument] Progresso: ${progress}% (${chunksWithEmbeddings.length}/${chunks.length} chunks)`);
+    }
+
+    const embeddingTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[IngestDocument] ✓ Embeddings gerados em ${embeddingTime}s (média: ${(parseFloat(embeddingTime) / chunks.length).toFixed(2)}s/chunk)`);
+    console.log(`[IngestDocument] Indexando no Qdrant...`);
 
     // Garante que a collection existe
     await this.ragPort.ensureCollection(ctx.tenantId);
 
     // Indexa no Qdrant
+    const qdrantStartTime = Date.now();
     await this.ragPort.indexDocument(ctx.tenantId, version.id, chunksWithEmbeddings);
-    console.log(`[IngestDocument] Documento indexado com sucesso!`);
+    const qdrantTime = ((Date.now() - qdrantStartTime) / 1000).toFixed(2);
+    console.log(`[IngestDocument] ✓ Documento indexado no Qdrant em ${qdrantTime}s`);
 
-    // Salva chunks no banco
-    for (const chunk of chunksWithEmbeddings) {
-      await this.documentRepo.createChunk({
+    // Salva chunks no banco (batch insert)
+    const dbStartTime = Date.now();
+    await this.documentRepo.createChunks(
+      chunksWithEmbeddings.map(chunk => ({
         documentVersionId: version.id,
         chunkId: chunk.chunkId,
         text: chunk.text,
         metadata: chunk.metadata,
         accessScope: chunk.accessScope,
         position: chunk.metadata.position,
-      });
-    }
+      }))
+    );
+    const dbTime = ((Date.now() - dbStartTime) / 1000).toFixed(2);
+    console.log(`[IngestDocument] ✓ Chunks salvos no banco de dados em ${dbTime}s`);
 
     // Atualiza status da versão
     await this.documentRepo.updateVersionStatus(version.id, 'completed');
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[IngestDocument] ✅ Documento processado com sucesso em ${totalTime}s total`);
 
     // Auditoria
     await this.auditPort.log({
