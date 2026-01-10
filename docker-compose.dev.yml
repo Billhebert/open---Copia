@@ -50,3 +50,5 @@ volumes:
 networks:
   chat-network-dev:
     driver: bridge
+# ollama pull mistral
+# ollama pull nomic-embed-text
