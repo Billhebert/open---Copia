@@ -195,6 +195,48 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
     }
   }
 
+  private async getAvailableOllamaModel(ollamaUrl: string): Promise<string | null> {
+    try {
+      const response = await fetch(`${ollamaUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      const models = data.models || [];
+
+      if (models.length === 0) {
+        return null;
+      }
+
+      // Preferência de modelos (do melhor para o pior)
+      const preferredModels = [
+        'llama3.2',
+        'llama3.1',
+        'llama3',
+        'phi3',
+        'mistral',
+        'qwen2.5'
+      ];
+
+      // Tenta encontrar um dos modelos preferidos
+      for (const preferred of preferredModels) {
+        const found = models.find((m: any) => m.name.includes(preferred));
+        if (found) {
+          return found.name;
+        }
+      }
+
+      // Se não encontrou nenhum preferido, usa o primeiro disponível
+      return models[0].name;
+    } catch (error) {
+      return null;
+    }
+  }
+
   private async generateResponseWithOllama(
     prompt: string,
     systemPrompt?: string
@@ -208,9 +250,20 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
   }> {
     const isWindows = process.platform === "win32";
     const ollamaUrl = process.env.OLLAMA_URL || (isWindows ? "http://host.docker.internal:11434" : "http://localhost:11434");
-    const ollamaModel = process.env.OLLAMA_MODEL || "llama3.2";
+    let ollamaModel = process.env.OLLAMA_MODEL || "";
 
-    console.log(`[Ollama] Gerando resposta com modelo ${ollamaModel}...`);
+    // Se não há modelo configurado ou configurado não existe, busca um disponível
+    if (!ollamaModel) {
+      console.log(`[Ollama] Buscando modelo disponível...`);
+      const availableModel = await this.getAvailableOllamaModel(ollamaUrl);
+      if (!availableModel) {
+        throw new Error('Nenhum modelo Ollama instalado. Execute: docker exec <container> ollama pull llama3.2');
+      }
+      ollamaModel = availableModel;
+      console.log(`[Ollama] Usando modelo encontrado: ${ollamaModel}`);
+    } else {
+      console.log(`[Ollama] Usando modelo configurado: ${ollamaModel}`);
+    }
 
     try {
       const response = await fetch(`${ollamaUrl}/api/generate`, {
@@ -226,6 +279,54 @@ export class OpencodeAdapter implements OpencodeAdapterPort {
 
       if (!response.ok) {
         const errorText = await response.text();
+
+        // Se modelo não encontrado (404), tenta buscar um disponível
+        if (response.status === 404 && errorText.includes('not found')) {
+          console.log(`[Ollama] ⚠️  Modelo ${ollamaModel} não encontrado, buscando alternativa...`);
+          const availableModel = await this.getAvailableOllamaModel(ollamaUrl);
+
+          if (!availableModel) {
+            throw new Error('Nenhum modelo Ollama instalado. Execute: docker exec <container> ollama pull nomic-embed-text:latest');
+          }
+
+          console.log(`[Ollama] Tentando com modelo alternativo: ${availableModel}`);
+
+          // Tenta novamente com o modelo encontrado
+          const retryResponse = await fetch(`${ollamaUrl}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: availableModel,
+              prompt: systemPrompt ? `${systemPrompt}\n\nUser: ${prompt}\n\nAssistant:` : prompt,
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(60000),
+          });
+
+          if (!retryResponse.ok) {
+            const retryErrorText = await retryResponse.text();
+            throw new Error(`Ollama error ${retryResponse.status}: ${retryErrorText}`);
+          }
+
+          const retryData: any = await retryResponse.json();
+          const retryContent = retryData.response || "";
+
+          if (!retryContent) {
+            throw new Error("Ollama retornou resposta vazia");
+          }
+
+          console.log(`[Ollama] ✅ Resposta gerada com ${availableModel} (${retryContent.length} chars)`);
+
+          return {
+            content: retryContent,
+            reasoning: undefined,
+            modelId: `ollama/${availableModel}`,
+            providerId: "ollama",
+            tokens: retryContent.length,
+            cost: 0,
+          };
+        }
+
         throw new Error(`Ollama error ${response.status}: ${errorText}`);
       }
 
